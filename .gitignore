@@ -3,3 +3,4 @@ plugins/
 logs/
 config/
 __pycache__
+data/
