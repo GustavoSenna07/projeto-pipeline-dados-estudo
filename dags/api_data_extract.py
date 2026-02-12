@@ -2,7 +2,7 @@ import pendulum
 from airflow import DAG
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.python import PythonOperator
-from airflow.models import Variable
+from airflow.sdk import Variable
 from datetime import datetime
 import requests
 import os
@@ -46,7 +46,7 @@ with DAG(
     else:
       raise Exception("API Indisponivel")  
     
-  # Função para criar a pasta data caso não exista  
+  # Função para criar a pasta raw caso não exista  
   def raw_data_save_folder():
     if not os.path.exists(raw_path):
       os.makedirs(raw_path)
@@ -56,7 +56,7 @@ with DAG(
   
   def extract_product():
     # Pega o id do produto atual para comecar a pegar a partir do de id 1
-    product_id = int(Variable.get("current_product_id", default_var=1))
+    product_id = int(Variable.get("current_product_id", default="1"))
     
     # Endpoint acessado para extrair os dados
     url = f"{api_url}/{product_id}"
@@ -100,10 +100,9 @@ with DAG(
     print(f"Product {product_id} saved!")
     
     # Incrementa 1 no id do produto
-    Variable.set("current_product_id", product_id + 1)
-    
-  # Tasks
+    Variable.set("current_product_id", str(product_id + 1))    
   
+  # Tasks
   task_check_api = PythonOperator(
     task_id = "check_api",
     python_callable = check_api,
