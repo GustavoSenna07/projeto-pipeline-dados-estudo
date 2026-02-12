@@ -1,11 +1,13 @@
 import pendulum
 from airflow import DAG
 from airflow.providers.standard.operators.bash import BashOperator
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
 from airflow.models import Variable
+from datetime import datetime
 import requests
 import os
 from dotenv import load_dotenv
+import json
 
 # Carrega o .env
 load_dotenv() 
@@ -14,14 +16,21 @@ load_dotenv()
 api_url = os.getenv("BASE_URL")
 raw_path = os.getenv("RAW_PATH")
 
+if not api_url:
+    raise ValueError("BASE_URL não definida no .env")
+
+if not raw_path:
+    raise ValueError("RAW_PATH não definida no .env")
+
+
 with DAG(
   dag_id = "extract_api_data",
   
   description = "Extract the data from the api",
   
-  schedule_interval = "@hourly"
+  schedule = "@hourly",
   
-  start_date = datetime(2025, 1, 1),
+  start_date = pendulum.datetime(2025, 1, 1, tz="UTC"),
   
   catchup = False,
   
@@ -53,7 +62,7 @@ with DAG(
     url = f"{api_url}/{product_id}"
     
     # Manda a requisicao para a api para um produto especifico
-    response = resquest.get(url)
+    response = requests.get(url)
     
     # Gera um erro caso o produto não seja encontrado ou a api esteja com defeito
     if response.status_code != 200:
@@ -73,7 +82,7 @@ with DAG(
       "stock": data["stock"],
       "tags": data["tags"],
       "weight": data["weight"],
-      "dimentions": data["dimentions"]
+      "dimensions": data["dimensions"]
     }
     
     # Define o caminho do arquivo
@@ -92,3 +101,22 @@ with DAG(
     
     # Incrementa 1 no id do produto
     Variable.set("current_product_id", product_id + 1)
+    
+  # Tasks
+  
+  task_check_api = PythonOperator(
+    task_id = "check_api",
+    python_callable = check_api,
+  )
+  
+  task_create_folders = PythonOperator(
+    task_id = "create_folders",
+    python_callable = raw_data_save_folder,
+  )
+  
+  task_extract_product = PythonOperator(
+    task_id = "select_product",
+    python_callable = extract_product,
+  )
+  
+  task_check_api >> task_create_folders >> task_extract_product
