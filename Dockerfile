@@ -47,4 +47,5 @@ RUN pip install --no-cache-dir \
     pandas \
     numpy \
     pyarrow==15.0.2 \
-    scikit-learn
+    scikit-learn \
+    apache-airflow-providers-apache-spark
