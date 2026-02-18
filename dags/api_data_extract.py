@@ -27,7 +27,6 @@ if not raw_path:
 if not script_path:
     raise ValueError("SCRIPT_PATH não definida no .env")
 
-
 with DAG(
   dag_id = "extract_api_data",
   

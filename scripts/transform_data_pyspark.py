@@ -4,11 +4,16 @@ import os
 import json
 import sys
 from pyspark.sql.functions import col
+from pyspark.sql.functions import concat_ws
 
 load_dotenv()
 
 raw_path = os.getenv("RAW_PATH")
 processed_path = os.getenv("PROCESSED_PATH")
+
+print("RAW_PATH:", raw_path)
+print("PROCESSED_PATH:", processed_path)
+
 
 if not processed_path:
     raise ValueError("PROCESSED_PATH não definida no .env")
@@ -28,8 +33,12 @@ spark = SparkSession.builder \
 # Pega o arquivo de acordo com o id do produto
 input_path = f"{raw_path}/product_{product_id}.json"
 
-# Le o aquivo json e salva na variavel
-data = spark.read.json(input_path)
+try:
+    data = spark.read.option("multiline", "true").json(input_path)
+except Exception as e:
+    print(f"Erro ao ler JSON: {e}")
+    spark.stop()
+    sys.exit(1)
 
 # Seleciona alguns dados
 data_selected = data.select(
@@ -40,7 +49,7 @@ data_selected = data.select(
   col("price"),
   col("rating"),
   col("stock"),
-  col("tags"),
+  concat_ws(",", col("tags")).alias("tags"),
   col("weight"),
   col("dimensions.width").alias("width"),
   col("dimensions.height").alias("height"),
@@ -59,8 +68,9 @@ if not os.path.exists(processed_path):
 data_selected.coalesce(1).write \
   .mode("append") \
   .option("header", True) \
+  .option("delimiter", ";") \
   .csv(processed_path)
-    
+
 # para o pyspark
 spark.stop()
   
