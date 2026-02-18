@@ -2,7 +2,8 @@ import pendulum
 from airflow import DAG
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.python import PythonOperator
-from airflow.sdk import Variable
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from airflow.models import Variable
 from datetime import datetime
 import requests
 import os
@@ -15,12 +16,16 @@ load_dotenv()
 # Salva as variaveis do .env
 api_url = os.getenv("BASE_URL")
 raw_path = os.getenv("RAW_PATH")
+script_path = os.getenv("SCRIPT_PATH")
 
 if not api_url:
     raise ValueError("BASE_URL não definida no .env")
 
 if not raw_path:
     raise ValueError("RAW_PATH não definida no .env")
+
+if not script_path:
+    raise ValueError("SCRIPT_PATH não definida no .env")
 
 
 with DAG(
@@ -56,7 +61,7 @@ with DAG(
   
   def extract_product():
     # Pega o id do produto atual para comecar a pegar a partir do de id 1
-    product_id = int(Variable.get("current_product_id", default="1"))
+    product_id = int(Variable.get("current_product_id", default_var="1"))
     
     # Endpoint acessado para extrair os dados
     url = f"{api_url}/{product_id}"
@@ -71,20 +76,6 @@ with DAG(
     # Joga todos os dados do json em uma variavel data
     data = response.json()
     
-    # Seleciona alguns campos do json
-    select_data = {
-      "id": data["id"],
-      "title": data["title"],
-      "description": data["description"],
-      "category": data["category"],
-      "price": data["price"],
-      "rating": data["rating"],
-      "stock": data["stock"],
-      "tags": data["tags"],
-      "weight": data["weight"],
-      "dimensions": data["dimensions"]
-    }
-    
     # Define o caminho do arquivo
     file_path = f"{raw_path}/product_{product_id}.json"
     
@@ -95,12 +86,14 @@ with DAG(
       # Pega os dados do dicionario select_data e tranforma tudo em json
       # f = arquivo que vai receber o json
       # indent=4 = formatacao do arquivo, melhor para a leitura
-      json.dump(select_data, f, indent=4)
+      json.dump(data, f, indent=4)
     
     print(f"Product {product_id} saved!")
-    
+        
     # Incrementa 1 no id do produto
     Variable.set("current_product_id", str(product_id + 1))    
+    
+    return product_id
   
   # Tasks
   task_check_api = PythonOperator(
@@ -118,4 +111,14 @@ with DAG(
     python_callable = extract_product,
   )
   
-  task_check_api >> task_create_folders >> task_extract_product
+  task_transform_and_sava_data = SparkSubmitOperator(
+    task_id="transform_data",
+    application="/opt/airflow/scripts/transform_data_pyspark.py",
+    application_args=[
+        "{{ ti.xcom_pull(task_ids='select_product') }}"
+    ],
+    conn_id="spark_default",
+  )
+
+  
+  task_check_api >> task_create_folders >> task_extract_product >> task_transform_and_sava_data
